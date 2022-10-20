@@ -24,7 +24,7 @@ from data_points import TRAIN_DATA, TRAIN_LABELS
 from qiskit import Aer, execute
 from qiskit.algorithms.optimizers import SPSA
 
-backend = Aer.get_backend('aer_simulator_matrix_vector_')
+backend = Aer.get_backend('qasm_simulator')
 
 encoder = ZZFeatureMap(feature_dimension=2, reps=2)
 ansatz = TwoLocal(2, ['ry', 'rz'], 'cz', reps=2)
@@ -69,11 +69,7 @@ def sum_to_probability(result):
 
 def get_classification_probabilities(x_data, theta):
 	circuits = [assign_parameters(x, theta) for x in x_data]
-
-	print("start exec")
-	results = execute(circuits, backend).result() # TODO: TAKES TOO LONG!
-	print("finish exec")
-
+	results = execute(circuits, backend).result()
 	return [
 		sum_to_probability(results.get_counts(c)) for c in circuits]
 
@@ -106,7 +102,7 @@ class OptimizerLog():
 
 
 log = OptimizerLog()
-optimizer = SPSA(maxiter=100, callback=log.update)
+optimizer = SPSA(maxiter=35, callback=log.update)
 
 #initial_point = np.random.random(ansatz.num_parameters)
 initial_point = np.array([3.28559355, 5.48514978, 5.13099949,
@@ -124,7 +120,7 @@ min_cost = result.fun
 
 import matplotlib.pyplot as plt
 plt.figure()
-plt.plot(log.steps, log.costs)
+plt.plot(log.evaluations, log.costs)
 plt.xlabel('Steps')
 plt.ylabel('Cost')
 plt.savefig("optimizer.png")

@@ -18,9 +18,14 @@ from qiskit.quantum_info import Statevector
 
 import tensorflow as tf
 import numpy as np
+import pickle
 
 qi_sv = QuantumInstance(Aer.get_backend("aer_simulator_statevector"))
 
+# Real Data, that is aimed to be replicated is the first, 2-qubit Bell State 
+real_data = QuantumCircuit(2)
+real_data.h(0)
+real_data.cx(0,1)
 
 # Create the Ansatz for Generator and Discriminator
 generator = TwoLocal(
@@ -74,8 +79,7 @@ gen_disc_circuit.compsoe(discriminator,inplace=True)
 
 # Real data fed Discriminator Circuit:
 real_disc_circuit = QuantumCircuit(3)
-real_disc_circuit.h(0)
-real_disc_circuit.cx(0,1)
+real_disc_circuit.compose(real_data, inplace=True)
 real_disc_circuit.compose(discriminator, inplace=True)
 
 
@@ -198,14 +202,35 @@ for epoch in range(max_iter):
 		grad_d_cost = [grad_d_fake[i] - grad_d_real[i] for i in range(N_DPARAMS)]
 		grad_d_cost = tf.convert_to_tensor(grad_d_cost)
 
-		discriminator_optimizer.apply_gradients(zip([grad_d_cost], disc_params))
+		discriminator_optimizer.apply_gradients(zip([grad_d_cost], [disc_params]))
 
 		if disc_training_step % D_STEPS == 0:
 			d_loss.append(discriminator_cost(disc_params))
 
 	for gen_training_step in range(G_STEPS):
 		g_matrix = gen_qnn.backward(disc_params,gen_params)[1].todense()[0][0b100:]
+		grad_g = np.sum(g_matrix, axis=0)
 
+		# Gradient of Cost function of the generator: -Pr[gen_disc == real]
+		grad_g_cost = -grad_g
+		grad_g_cost = tf.convert_to_tensor(grad_g_cost)
 
+		generator_optimizer.apply_gradients(zip([grad_g_cost], [gen_params]))
+		g_loss.append(generator_cost(gen_params))
 
+	# Calculate the KL-div of the generated state and real state
+	gen_checkpoint_circuit = generator.bind_parameters(gen_params.numpy())
+	generated_state = Statevector(gen_checkpoint_circuit).probabilities_dict()
+	real_state = Statevector(real_circuit).probabilities_dict()
+	current_kl = calculate_kl_div(generated_state, real_state)
+	kl_div.append(current_kl)
 
+	# If a new best theta_g is found, we deserialize and reserialize 
+	# to make sure there are no zero links
+	if np.min(kl_div) == current_kl:
+		best_gen_params = pickle.loads(pickle.dumps(gen_params))
+
+	if epoch % 10 == 0:
+		for header, val in zip(TABLE_HEADERS.split('|'),
+				(epoch, g_loss[-1], d_loss[-1], kl_div[-1])):
+			print(f"{val:.3g} ".rjust(len(header)), end="|")
