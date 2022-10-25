@@ -29,10 +29,11 @@ real_data.cx(0,1)
 
 # Create the Ansatz for Generator and Discriminator
 generator = TwoLocal(
-		['ry', 'rz'], 'cz', 'full', reps=2, parameter_prefix='θ_g', name='Generator'
+		2, ['ry', 'rz'], 'cz', 'full', reps=2, parameter_prefix='θ_g', name='Generator'
 	)
+generator = generator.decompose()
 
-discriminator = QuantumCircuit(3, 1, name="Discriminator")
+discriminator = QuantumCircuit(3, name="Discriminator")
 disc_weights = ParameterVector('θ_d', 12)
 discriminator.barrier()
 discriminator.h(0)
@@ -75,7 +76,7 @@ def calculate_kl_div(model_distribution: dict, target_distribution: dict):
 # Generator + Discriminator Circuit:
 gen_disc_circuit = QuantumCircuit(3)
 gen_disc_circuit.compose(generator, inplace=True)
-gen_disc_circuit.compsoe(discriminator,inplace=True)
+gen_disc_circuit.compose(discriminator,inplace=True)
 
 # Real data fed Discriminator Circuit:
 real_disc_circuit = QuantumCircuit(3)
@@ -150,8 +151,25 @@ gen_params = tf.Variable(init_gen_params)
 disc_params = tf.Variable(init_disc_params)
 
 
-# Initialize Adam optimizer from Keras. Two Optimizers will compete
-# against each other in a zero-sum-game. 
+"""
+	We initialize the generator circuit. 
+	Visualize the initial generator distribution.
+"""
+
+init_gen_circuit = generator.bind_parameters(init_gen_params)
+init_prob_dict = Statevector(init_gen_circuit).probabilities_dict()
+
+import matplotlib.pyplot as plt
+from qiskit.tools.visualization import plot_histogram
+
+fig, ax1 = plt.subplots(1, 1, sharey=True)
+ax1.set_title("Initial generator distribution")
+plot_histogram(init_prob_dict, ax=ax1)
+fig.savefig("initial generator distribution")
+
+
+# Initialize Adam optimizer from Keras. 
+# Two Optimizers will compete against each other in a zero-sum-game. 
 generator_optimizer = tf.keras.optimizers.Adam(learning_rate=0.02)
 discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=0.02)
 
@@ -161,6 +179,7 @@ g_loss = []
 d_loss = []
 kl_div = []
 max_iter = 100
+
 
 TABLE_HEADER = "Epoch | Generator cost | Discriminator cost | KL Div. |"
 print(TABLE_HEADER)
@@ -175,7 +194,7 @@ for epoch in range(max_iter):
 	G_STEPS = 1
 
 	for disc_training_step in range(D_STEPS):
-		d_fake_matrix = disc_fake_qnn.backward(gen_params, disc_params)[1].todense()[0, 0b100:]
+		d_fake_matrix = disc_fake_qnn.backward(gen_params.numpy(), disc_params.numpy())[1].todense()[0][0b100:]
 
 		"""
 		This step delivers the a matrix:
@@ -194,7 +213,7 @@ for epoch in range(max_iter):
 		# Here we add up every column of a row and get at the end a column vector.
 
 
-		d_real_matrix = disc_real_qnn.backward(gen_params, disc_params)[1].todense()[0][0b100:]
+		d_real_matrix = disc_real_qnn.backward([], disc_params)[1].todense()[0][0b100:]
 		grad_d_real = np.sum(d_real_matrix, axis=0)
 
 		# Calculate the grad(cost_disc) = grad(Pr[fake_data = real] - Pr[real_data = real])
@@ -208,7 +227,7 @@ for epoch in range(max_iter):
 			d_loss.append(discriminator_cost(disc_params))
 
 	for gen_training_step in range(G_STEPS):
-		g_matrix = gen_qnn.backward(disc_params,gen_params)[1].todense()[0][0b100:]
+		g_matrix = gen_qnn.backward(disc_params.numpy(),gen_params.numpy())[1].todense()[0][0b100:]
 		grad_g = np.sum(g_matrix, axis=0)
 
 		# Gradient of Cost function of the generator: -Pr[gen_disc == real]
@@ -221,7 +240,7 @@ for epoch in range(max_iter):
 	# Calculate the KL-div of the generated state and real state
 	gen_checkpoint_circuit = generator.bind_parameters(gen_params.numpy())
 	generated_state = Statevector(gen_checkpoint_circuit).probabilities_dict()
-	real_state = Statevector(real_circuit).probabilities_dict()
+	real_state = Statevector(real_data).probabilities_dict()
 	current_kl = calculate_kl_div(generated_state, real_state)
 	kl_div.append(current_kl)
 
@@ -231,6 +250,44 @@ for epoch in range(max_iter):
 		best_gen_params = pickle.loads(pickle.dumps(gen_params))
 
 	if epoch % 10 == 0:
-		for header, val in zip(TABLE_HEADERS.split('|'),
+		for header, val in zip(TABLE_HEADER.split('|'),
 				(epoch, g_loss[-1], d_loss[-1], kl_div[-1])):
 			print(f"{val:.3g} ".rjust(len(header)), end="|")
+
+"""
+	Visualize the results. One plot for losses of discriminator and 
+	generator and one for the KL divergence over the training steps.
+"""
+
+fig, (loss, kl) = plt.subplots(2, sharex=True,
+                               gridspec_kw={'height_ratios': [0.75, 1]},
+                               figsize=(6,4))
+fig.suptitle('QGAN training stats')
+fig.supxlabel('Training step')
+loss.plot(range(len(g_loss)), g_loss, label="Generator loss")
+loss.plot(range(len(d_loss)), d_loss, label="Discriminator loss",
+          color="C3")
+loss.legend()
+loss.set(ylabel='Loss')
+kl.plot(range(len(kl_div)), kl_div, label="KL Divergence",
+        color="C1")
+kl.set(ylabel='KL Divergence')
+kl.legend()
+fig.tight_layout()
+fig.savefig('QGAN_training_chart.png')
+
+
+"""
+	Visualize the trained generator distribution.
+"""
+gen_checkpoint_circuit = generator.bind_parameters(
+    best_gen_params.numpy())
+gen_prob_dict = Statevector(gen_checkpoint_circuit).probabilities_dict()
+real_prob_dict = Statevector(real_data).probabilities_dict() # constant
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8,3))
+plot_histogram(gen_prob_dict, ax=ax1)
+ax1.set_title("Trained generator distribution")
+plot_histogram(real_prob_dict, ax=ax2)
+ax2.set_title("Real distribution")
+fig.tight_layout()
+fig.savefig('trained_generator_state.png')
