@@ -165,7 +165,7 @@ from qiskit.tools.visualization import plot_histogram
 fig, ax1 = plt.subplots(1, 1, sharey=True)
 ax1.set_title("Initial generator distribution")
 plot_histogram(init_prob_dict, ax=ax1)
-fig.savefig("initial generator distribution")
+fig.savefig("results_2_bit_bell/initial generator distribution")
 
 
 # Initialize Adam optimizer from Keras. 
@@ -274,7 +274,7 @@ kl.plot(range(len(kl_div)), kl_div, label="KL Divergence",
 kl.set(ylabel='KL Divergence')
 kl.legend()
 fig.tight_layout()
-fig.savefig('QGAN_training_chart.png')
+fig.savefig('results_2_bit_bell/QGAN_training_chart.png')
 
 
 """
@@ -290,4 +290,4 @@ ax1.set_title("Trained generator distribution")
 plot_histogram(real_prob_dict, ax=ax2)
 ax2.set_title("Real distribution")
 fig.tight_layout()
-fig.savefig('trained_generator_state.png')
+fig.savefig('results_2_bit_bell/trained_generator_state.png')
