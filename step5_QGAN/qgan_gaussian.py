@@ -12,6 +12,9 @@ from qiskit.circuit.library import TwoLocal
 from qiskit_machine_learning.neural_networks import OpflowQNN
 from qiskit.quantum_info import Statevector
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 
 # State that we will try to replicate/generate.
 data_qubits = 3
@@ -184,7 +187,7 @@ discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=0.02)
 # Initialize variables to track metrics while training
 best_gen_params = tf.Variable(init_gen_params)
 g_loss, d_loss, kl_div = [], [], []
-max_iter = 3
+max_iter = 300
 
 
 TABLE_HEADER = "Epoch | Generator cost | Discriminator cost | KL Div. |"
@@ -211,7 +214,7 @@ for epoch in range(max_iter):
 		"""
 
 		grad_dcost_fake = disc_fake_qnn.backward(gen_params,disc_params)[1][0,0]
-		grad_dcost_real = disc_real_qnn.backward(gen_params,disc_params)[1][0,0]
+		grad_dcost_real = disc_real_qnn.backward([],disc_params)[1][0,0]
 		grad_dcost = grad_dcost_real - grad_dcost_fake
 
 		discriminator_optimizer.apply_gradients(zip([grad_dcost], [disc_params]))
@@ -252,17 +255,20 @@ for epoch in range(max_iter):
 			print(f"{val:.3g} ".rjust(len(header)), end="|")
 		print()
 
+
 """
 	Visualize the results.
 """
 import matplotlib.pyplot as plt
+from qiskit.tools.visualization import plot_histogram
+
 fig, (loss, kl) = plt.subplots(2, sharex=True,
 								gridspec_kw={'height_ratios': [0.75, 1]},
 								figsize=(6,4))
 fig.suptitle('QGAN training stats')
 fig.supxlabel('Training step')
-loss.plot(range(len(gloss)), gloss, label="Generator loss")
-loss.plot(range(len(dloss)), dloss, label="Discriminator loss",
+loss.plot(range(len(g_loss)), g_loss, label="Generator loss")
+loss.plot(range(len(d_loss)), d_loss, label="Discriminator loss",
 			color="C3")
 loss.legend()
 loss.set(ylabel='Loss')
