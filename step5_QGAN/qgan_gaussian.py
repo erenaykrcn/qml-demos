@@ -273,3 +273,16 @@ kl.legend()
 fig.tight_layout();
 
 fig.savefig("QGAN_GAUSSIAN.png")
+
+# Create test circuit with new parameters
+gen_checkpoint_circuit = generator.bind_parameters(best_gen_params.numpy())
+gen_prob_dict = Statevector(gen_checkpoint_circuit).probabilities_dict()
+fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(9,3))
+plot_histogram(gen_prob_dict, ax=ax1)
+ax1.set_title("Trained generator distribution")
+plot_histogram(real_prob_dict, ax=ax2)
+ax2.set_title("Real distribution")
+ax2.set_ylim([0,.5])
+fig.tight_layout()
+
+fig.savefig("QGAN_GAUSSIAN_prob_dict.png")
